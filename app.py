@@ -5,13 +5,21 @@ import os
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-CORS(app)
-
-@app.route('/', methods=['GET'])
-def index():
-    return "Backend is running!"
+CORS(app, resources={
+    r"/*": {
+        "origins": ["*"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 rooms = {}
+
+@app.route('/', methods=['GET', 'OPTIONS'])
+def index():
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "ok"}), 200
+    return "Backend is running!"
 
 @app.route('/create_room', methods=['POST'])
 def create_room():
@@ -85,5 +93,5 @@ def get_result(room_id):
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # ✅ 用 Render 提供的端口
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
