@@ -5,104 +5,102 @@ import uuid
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": ["https://lightsplit-frontend.vercel.app"],
-        "methods": ["GET", "POST"]
+        "origins": ["https://lightsplit-frontend.vercel.app", "http://localhost:3000"],
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type"]
     }
 })
 
-# 暂存房间资料（后面可以接数据库）
 rooms = {}
 
-# 根路由，欢迎信息
 @app.route('/')
 def home():
     return "Welcome to the lightsplit app!"
 
-# 创建房间
 @app.route('/create_room', methods=['POST'])
 def create_room():
-    data = request.json
-    room_id = str(uuid.uuid4())  # 生成一个唯一的房间ID
-    rooms[room_id] = {
-        "title": data.get("title"),  # 房间的标题
-        "members": data.get("members"),  # 房间成员
-        "payments": {}  # 存储每个成员的支付信息
-    }
-    return jsonify({"room_id": room_id})
+    try:
+        data = request.get_json()
+        if not data or 'title' not in data or 'members' not in data:
+            return jsonify({"error": "Missing title or members"}), 400
+            
+        room_id = str(uuid.uuid4())
+        rooms[room_id] = {
+            "title": data["title"],
+            "members": data["members"],
+            "payments": {}
+        }
+        return jsonify({"room_id": room_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# 提交付款
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
-    data = request.json
-    name = data.get("name")  # 成员姓名
-    amount = data.get("amount")  # 付款金额
-    # 查找房间并存储付款信息
-    if room_id in rooms:
-        rooms[room_id]["payments"][name] = amount
+    try:
+        data = request.get_json()
+        if not data or 'name' not in data or 'amount' not in data:
+            return jsonify({"error": "Missing name or amount"}), 400
+            
+        if room_id not in rooms:
+            return jsonify({"error": "Room not found"}), 404
+            
+        rooms[room_id]["payments"][data["name"]] = float(data["amount"])
         return jsonify({"message": "Payment saved!"})
-    return jsonify({"error": "Room not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-# 获取结算结果
 @app.route('/result/<room_id>', methods=['GET'])
 def get_result(room_id):
-    if room_id not in rooms:
-        return jsonify({"error": "Room not found"}), 404
-    
-    room = rooms[room_id]
-    payments = room["payments"]
-    members = room["members"]
-    
-    # 确保所有成员都有支付数据，如果没有则设为0
-    for member in members:
-        if member not in payments:
-            payments[member] = 0
-    
-    total = sum(value if value is not None else 0 for value in payments.values())
-    avg = total / len(members)  # 计算每个人应该支付的平均金额
-    
-    # 计算每个人的余额
-    balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
-    
-    # 计算具体的转账指令
-    transactions = []
-    # 复制一份余额表进行操作
-    balances_copy = balances.copy()
-    
-    # 持续结算直到所有人的余额接近0
-    while any(abs(balance) > 0.01 for balance in balances_copy.values()):
-        # 找到最大的债权人和债务人
-        max_creditor = max(balances_copy.items(), key=lambda x: x[1] if x[1] > 0 else -float('inf'))
-        max_debtor = min(balances_copy.items(), key=lambda x: x[1] if x[1] < 0 else float('inf'))
+    try:
+        if room_id not in rooms:
+            return jsonify({"error": "Room not found"}), 404
+            
+        room = rooms[room_id]
+        payments = room["payments"]
+        members = room["members"]
         
-        # 如果没有债权人或债务人，退出循环
-        if max_creditor[1] <= 0 or max_debtor[1] >= 0:
-            break
+        for member in members:
+            payments.setdefault(member, 0)
         
-        # 计算转账金额
-        amount = min(max_creditor[1], -max_debtor[1])
-        amount = round(amount, 2)  # 四舍五入到两位小数
+        total = sum(float(v) for v in payments.values())
+        avg = total / len(members)
         
-        # 更新余额
-        balances_copy[max_creditor[0]] -= amount
-        balances_copy[max_debtor[0]] += amount
+        balances = {name: round(float(amount) - avg, 2) for name, amount in payments.items()}
+        transactions = []
+        balances_copy = balances.copy()
         
-        # 添加交易记录
-        transactions.append({
-            "from": max_debtor[0],
-            "to": max_creditor[0],
-            "amount": amount
+        while any(abs(balance) > 0.01 for balance in balances_copy.values()):
+            creditors = {k: v for k, v in balances_copy.items() if v > 0}
+            debtors = {k: v for k, v in balances_copy.items() if v < 0}
+            
+            if not creditors or not debtors:
+                break
+                
+            max_creditor = max(creditors.items(), key=lambda x: x[1])
+            max_debtor = min(debtors.items(), key=lambda x: x[1])
+            
+            amount = min(max_creditor[1], -max_debtor[1])
+            amount = round(amount, 2)
+            
+            balances_copy[max_creditor[0]] -= amount
+            balances_copy[max_debtor[0]] += amount
+            
+            transactions.append({
+                "from": max_debtor[0],
+                "to": max_creditor[0],
+                "amount": amount
+            })
+        
+        return jsonify({
+            "room_id": room_id,
+            "title": room["title"],
+            "balances": balances,
+            "transactions": transactions,
+            "total_spent": round(total, 2),
+            "average_per_person": round(avg, 2)
         })
-    
-    return jsonify({
-        "room_id": room_id,
-        "title": room["title"],
-        "balances": balances,
-        "transactions": transactions,
-        "total_spent": total,
-        "average_per_person": round(avg, 2)
-    })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001, use_reloader=False)
-    
-
+    app.run(host='0.0.0.0', port=5001)
