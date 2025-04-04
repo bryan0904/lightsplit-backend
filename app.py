@@ -5,10 +5,8 @@ import uuid
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": [
-            "https://你的vercel应用.vercel.app",
-            "http://localhost:3000"  # 保留本地测试
-        ]
+        "origins": ["https://lightsplit-frontend.vercel.app"],
+        "methods": ["GET", "POST"]
     }
 })
 
