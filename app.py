@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
+
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
@@ -9,10 +10,13 @@ CORS(app, resources={
         "allow_headers": ["Content-Type"]
     }
 })
+
 rooms = {}
+
 @app.route('/')
 def home():
     return "Welcome to the lightsplit app!"
+
 @app.route('/create_room', methods=['POST'])
 def create_room():
     try:
@@ -25,11 +29,16 @@ def create_room():
             "title": data["title"],
             "members": data["members"],
             "payments": {},
-            "payment_descriptions": {}  # 新增：用于存储付款描述
+            "payment_descriptions": {}
         }
-        return jsonify({"room_id": room_id})
+        return jsonify({
+            "room_id": room_id,
+            "title": data["title"],
+            "members": data["members"]
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
     try:
@@ -42,7 +51,6 @@ def submit_payment(room_id):
             
         rooms[room_id]["payments"][data["name"]] = float(data["amount"])
         
-        # 保存付款描述
         if 'description' in data and data["description"]:
             if "payment_descriptions" not in rooms[room_id]:
                 rooms[room_id]["payment_descriptions"] = {}
@@ -51,6 +59,7 @@ def submit_payment(room_id):
         return jsonify({"message": "Payment saved!"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 @app.route('/result/<room_id>', methods=['GET'])
 def get_result(room_id):
     try:
@@ -96,6 +105,7 @@ def get_result(room_id):
         response_data = {
             "room_id": room_id,
             "title": room["title"],
+            "members": members,
             "balances": balances,
             "transactions": transactions,
             "total_spent": round(total, 2),
@@ -103,12 +113,12 @@ def get_result(room_id):
             "payments": payments
         }
         
-        # 添加付款描述到响应中
         if "payment_descriptions" in room:
             response_data["payment_descriptions"] = room["payment_descriptions"]
             
         return jsonify(response_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
