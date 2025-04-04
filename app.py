@@ -34,9 +34,21 @@ def create_room():
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
     data = request.get_json()
-    rooms[room_id]["payments"][data["name"]] = float(data["amount"])
+    name = data["name"]
+    amount = float(data["amount"])
+    
+    # 累加金额（而不是直接覆盖）
+    if name in rooms[room_id]["payments"]:
+        rooms[room_id]["payments"][name] += amount  # 累加
+    else:
+        rooms[room_id]["payments"][name] = amount   # 第一次付款
+    
+    # 存储付款描述（可选）
     if "description" in data:
-        rooms[room_id]["payment_descriptions"][data["name"]] = data["description"]
+        if "payment_descriptions" not in rooms[room_id]:
+            rooms[room_id]["payment_descriptions"] = {}
+        rooms[room_id]["payment_descriptions"][name] = data["description"]
+    
     return jsonify({"message": "Payment saved!"})
 
 @app.route('/result/<room_id>', methods=['GET'])
