@@ -3,6 +3,8 @@ from flask_cors import CORS
 import uuid
 
 app = Flask(__name__)
+# 确保返回中文而非Unicode转义
+app.config['JSON_AS_ASCII'] = False  
 CORS(app, resources={
     r"/*": {
         "origins": ["https://lightsplit-frontend.vercel.app", "http://localhost:3000"],
@@ -13,112 +15,63 @@ CORS(app, resources={
 
 rooms = {}
 
-@app.route('/')
-def home():
-    return "Welcome to the lightsplit app!"
-
 @app.route('/create_room', methods=['POST'])
 def create_room():
-    try:
-        data = request.get_json()
-        if not data or 'title' not in data or 'members' not in data:
-            return jsonify({"error": "Missing title or members"}), 400
-            
-        room_id = str(uuid.uuid4())
-        rooms[room_id] = {
-            "title": data["title"],
-            "members": data["members"],
-            "payments": {},
-            "payment_descriptions": {}
-        }
-        return jsonify({
-            "room_id": room_id,
-            "title": data["title"],
-            "members": data["members"]
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    data = request.get_json()
+    room_id = str(uuid.uuid4())
+    rooms[room_id] = {
+        "title": data["title"],
+        "members": data["members"],
+        "payments": {},
+        "payment_descriptions": {}
+    }
+    return jsonify({
+        "room_id": room_id,
+        "title": data["title"],
+        "members": data["members"]  # 直接返回中文成员列表
+    })
 
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
-    try:
-        data = request.get_json()
-        if not data or 'name' not in data or 'amount' not in data:
-            return jsonify({"error": "Missing name or amount"}), 400
-            
-        if room_id not in rooms:
-            return jsonify({"error": "Room not found"}), 404
-            
-        rooms[room_id]["payments"][data["name"]] = float(data["amount"])
-        
-        if 'description' in data and data["description"]:
-            if "payment_descriptions" not in rooms[room_id]:
-                rooms[room_id]["payment_descriptions"] = {}
-            rooms[room_id]["payment_descriptions"][data["name"]] = data["description"]
-            
-        return jsonify({"message": "Payment saved!"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    data = request.get_json()
+    rooms[room_id]["payments"][data["name"]] = float(data["amount"])
+    if "description" in data:
+        rooms[room_id]["payment_descriptions"][data["name"]] = data["description"]
+    return jsonify({"message": "Payment saved!"})
 
 @app.route('/result/<room_id>', methods=['GET'])
 def get_result(room_id):
-    try:
-        if room_id not in rooms:
-            return jsonify({"error": "Room not found"}), 404
-            
-        room = rooms[room_id]
-        payments = room["payments"]
-        members = room["members"]
-        
-        for member in members:
-            payments.setdefault(member, 0)
-        
-        total = sum(float(v) for v in payments.values())
-        avg = total / len(members)
-        
-        balances = {name: round(float(amount) - avg, 2) for name, amount in payments.items()}
-        transactions = []
-        balances_copy = balances.copy()
-        
-        while any(abs(balance) > 0.01 for balance in balances_copy.values()):
-            creditors = {k: v for k, v in balances_copy.items() if v > 0}
-            debtors = {k: v for k, v in balances_copy.items() if v < 0}
-            
-            if not creditors or not debtors:
-                break
-                
-            max_creditor = max(creditors.items(), key=lambda x: x[1])
-            max_debtor = min(debtors.items(), key=lambda x: x[1])
-            
-            amount = min(max_creditor[1], -max_debtor[1])
-            amount = round(amount, 2)
-            
-            balances_copy[max_creditor[0]] -= amount
-            balances_copy[max_debtor[0]] += amount
-            
-            transactions.append({
-                "from": max_debtor[0],
-                "to": max_creditor[0],
-                "amount": amount
-            })
-        
-        response_data = {
-            "room_id": room_id,
-            "title": room["title"],
-            "members": members,
-            "balances": balances,
-            "transactions": transactions,
-            "total_spent": round(total, 2),
-            "average_per_person": round(avg, 2),
-            "payments": payments
-        }
-        
-        if "payment_descriptions" in room:
-            response_data["payment_descriptions"] = room["payment_descriptions"]
-            
-        return jsonify(response_data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    room = rooms[room_id]
+    payments = room["payments"]
+    members = room["members"]
+    
+    # 计算每人余额
+    total = sum(payments.values())
+    avg = total / len(members)
+    balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
+    
+    # 计算转账明细
+    transactions = []
+    balances_copy = balances.copy()
+    while any(abs(b) > 0.01 for b in balances_copy.values()):
+        creditor = max(balances_copy.items(), key=lambda x: x[1])
+        debtor = min(balances_copy.items(), key=lambda x: x[1])
+        amount = min(creditor[1], -debtor[1])
+        balances_copy[creditor[0]] -= amount
+        balances_copy[debtor[0]] += amount
+        transactions.append({"from": debtor[0], "to": creditor[0], "amount": round(amount, 2)})
+    
+    return jsonify({
+        "room_id": room_id,
+        "title": room["title"],
+        "members": members,  # 直接返回中文
+        "balances": balances,
+        "transactions": transactions,
+        "total_spent": round(total, 2),
+        "average_per_person": round(avg, 2),
+        "payments": payments,
+        "payment_descriptions": room.get("payment_descriptions", {})
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
