@@ -3,15 +3,8 @@ from flask_cors import CORS
 import uuid
 
 app = Flask(__name__)
-# 确保返回中文而非Unicode转义
-app.config['JSON_AS_ASCII'] = False  
-CORS(app, resources={
-    r"/*": {
-        "origins": ["https://lightsplit-frontend.vercel.app", "http://localhost:3000"],
-        "methods": ["GET", "POST"],
-        "allow_headers": ["Content-Type"]
-    }
-})
+app.config['JSON_AS_ASCII'] = False
+CORS(app)
 
 rooms = {}
 
@@ -25,11 +18,7 @@ def create_room():
         "payments": {},
         "payment_descriptions": {}
     }
-    return jsonify({
-        "room_id": room_id,
-        "title": data["title"],
-        "members": data["members"]  # 直接返回中文成员列表
-    })
+    return jsonify({"room_id": room_id})
 
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
@@ -37,16 +26,13 @@ def submit_payment(room_id):
     name = data["name"]
     amount = float(data["amount"])
     
-    # 累加金额（而不是直接覆盖）
+    # 关键修复：累加金额，而不是覆盖
     if name in rooms[room_id]["payments"]:
-        rooms[room_id]["payments"][name] += amount  # 累加
+        rooms[room_id]["payments"][name] += amount
     else:
-        rooms[room_id]["payments"][name] = amount   # 第一次付款
+        rooms[room_id]["payments"][name] = amount
     
-    # 存储付款描述（可选）
     if "description" in data:
-        if "payment_descriptions" not in rooms[room_id]:
-            rooms[room_id]["payment_descriptions"] = {}
         rooms[room_id]["payment_descriptions"][name] = data["description"]
     
     return jsonify({"message": "Payment saved!"})
@@ -57,12 +43,16 @@ def get_result(room_id):
     payments = room["payments"]
     members = room["members"]
     
-    # 计算每人余额
+    # 确保所有成员都有金额记录（即使没付过钱）
+    for member in members:
+        if member not in payments:
+            payments[member] = 0.0
+    
     total = sum(payments.values())
     avg = total / len(members)
     balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
     
-    # 计算转账明细
+    # 计算谁该给谁钱
     transactions = []
     balances_copy = balances.copy()
     while any(abs(b) > 0.01 for b in balances_copy.values()):
@@ -71,17 +61,21 @@ def get_result(room_id):
         amount = min(creditor[1], -debtor[1])
         balances_copy[creditor[0]] -= amount
         balances_copy[debtor[0]] += amount
-        transactions.append({"from": debtor[0], "to": creditor[0], "amount": round(amount, 2)})
+        transactions.append({
+            "from": debtor[0],
+            "to": creditor[0],
+            "amount": round(amount, 2)
+        })
     
     return jsonify({
         "room_id": room_id,
         "title": room["title"],
-        "members": members,  # 直接返回中文
+        "members": members,
+        "payments": payments,
         "balances": balances,
         "transactions": transactions,
         "total_spent": round(total, 2),
         "average_per_person": round(avg, 2),
-        "payments": payments,
         "payment_descriptions": room.get("payment_descriptions", {})
     })
 
