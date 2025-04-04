@@ -3,7 +3,7 @@ from flask_cors import CORS
 import uuid
 
 app = Flask(__name__)
-app.config['JSON_AS_ASCII'] = False
+app.config['JSON_AS_ASCII'] = False  # 确保返回中文
 CORS(app)
 
 rooms = {}
@@ -18,7 +18,11 @@ def create_room():
         "payments": {},
         "payment_descriptions": {}
     }
-    return jsonify({"room_id": room_id})
+    return jsonify({
+        "room_id": room_id,
+        "title": data["title"],
+        "members": data["members"]
+    })
 
 @app.route('/submit_payment/<room_id>', methods=['POST'])
 def submit_payment(room_id):
@@ -26,33 +30,34 @@ def submit_payment(room_id):
     name = data["name"]
     amount = float(data["amount"])
     
-    # 关键修复：累加金额，而不是覆盖
+    # 金额累加（而不是覆盖）
     if name in rooms[room_id]["payments"]:
         rooms[room_id]["payments"][name] += amount
     else:
         rooms[room_id]["payments"][name] = amount
     
+    # 保存付款描述
     if "description" in data:
         rooms[room_id]["payment_descriptions"][name] = data["description"]
     
-    return jsonify({"message": "Payment saved!"})
+    return jsonify({"message": "付款已保存！"})
 
 @app.route('/result/<room_id>', methods=['GET'])
 def get_result(room_id):
     room = rooms[room_id]
     payments = room["payments"]
-    members = room["members"]
     
-    # 确保所有成员都有金额记录（即使没付过钱）
-    for member in members:
+    # 确保所有成员都有付款记录
+    for member in room["members"]:
         if member not in payments:
             payments[member] = 0.0
     
+    # 计算分账结果
     total = sum(payments.values())
-    avg = total / len(members)
+    avg = total / len(room["members"])
     balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
     
-    # 计算谁该给谁钱
+    # 计算转账明细
     transactions = []
     balances_copy = balances.copy()
     while any(abs(b) > 0.01 for b in balances_copy.values()):
@@ -70,7 +75,7 @@ def get_result(room_id):
     return jsonify({
         "room_id": room_id,
         "title": room["title"],
-        "members": members,
+        "members": room["members"],
         "payments": payments,
         "balances": balances,
         "transactions": transactions,
