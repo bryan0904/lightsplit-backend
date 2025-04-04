@@ -1,13 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
+import os
+
+app = Flask(__name__)
+app.config['JSON_AS_ASCII'] = False
+CORS(app)
+
 @app.route('/', methods=['GET'])
 def index():
     return "Backend is running!"
-
-app = Flask(__name__)
-app.config['JSON_AS_ASCII'] = False  # 确保返回中文
-CORS(app)
 
 rooms = {}
 
@@ -33,13 +35,11 @@ def submit_payment(room_id):
     name = data["name"]
     amount = float(data["amount"])
     
-    # 金额累加（而不是覆盖）
     if name in rooms[room_id]["payments"]:
         rooms[room_id]["payments"][name] += amount
     else:
         rooms[room_id]["payments"][name] = amount
     
-    # 保存付款描述
     if "description" in data:
         rooms[room_id]["payment_descriptions"][name] = data["description"]
     
@@ -50,17 +50,14 @@ def get_result(room_id):
     room = rooms[room_id]
     payments = room["payments"]
     
-    # 确保所有成员都有付款记录
     for member in room["members"]:
         if member not in payments:
             payments[member] = 0.0
     
-    # 计算分账结果
     total = sum(payments.values())
     avg = total / len(room["members"])
     balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
     
-    # 计算转账明细
     transactions = []
     balances_copy = balances.copy()
     while any(abs(b) > 0.01 for b in balances_copy.values()):
@@ -88,4 +85,5 @@ def get_result(room_id):
     })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001)
+    port = int(os.environ.get("PORT", 5000))  # ✅ 用 Render 提供的端口
+    app.run(host='0.0.0.0', port=port)
