@@ -3,7 +3,14 @@ from flask_cors import CORS
 import uuid
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "https://你的vercel应用.vercel.app",
+            "http://localhost:3000"  # 保留本地测试
+        ]
+    }
+})
 
 # 暂存房间资料（后面可以接数据库）
 rooms = {}
