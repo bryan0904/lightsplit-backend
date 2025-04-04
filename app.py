@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
+@app.route('/', methods=['GET'])
+def index():
+    return "Backend is running!"
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # 确保返回中文
