@@ -1,7 +1,9 @@
+# app.py 的修改版
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import uuid
 import random
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -26,7 +28,8 @@ def create_room():
     rooms[room_id] = {
         "title": data["title"],
         "members": data["members"],
-        "payments": {}
+        "payments": {},
+        "payment_records": []  # 新增：用于保存详细的支付记录
     }
     return jsonify({"room_id": room_id})
 
@@ -38,12 +41,23 @@ def submit_payment(room_id):
     data = request.get_json()
     name = data["name"]
     amount = float(data["amount"])
+    description = data.get("description", "未填写描述")  # 新增：获取描述
     
-    # 累计付款金额而不是替换
+    # 累计付款金额
     if name in rooms[room_id]["payments"]:
         rooms[room_id]["payments"][name] += amount
     else:
         rooms[room_id]["payments"][name] = amount
+        
+    # 保存详细的支付记录
+    payment_record = {
+        "id": str(time.time()),  # 使用时间戳作为ID
+        "name": name,
+        "amount": amount,
+        "description": description,
+        "date": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    rooms[room_id]["payment_records"].append(payment_record)
         
     return jsonify({"success": True})
 
@@ -63,7 +77,7 @@ def get_result(room_id):
 
     # 计算总额和平均值
     total = sum(payments.values())
-    avg = total / len(members)
+    avg = total / len(members) if len(members) > 0 else 0
 
     # 计算每人余额
     balances = {name: round(amount - avg, 2) for name, amount in payments.items()}
@@ -99,11 +113,12 @@ def get_result(room_id):
 
     return jsonify({
         "title": room["title"],
-        "members": room["members"],  # 添加成员列表到返回结果
+        "members": room["members"],
         "balances": balances,
         "transactions": transactions,
         "total_spent": round(total, 2),
-        "average_per_person": round(avg, 2)
+        "average_per_person": round(avg, 2),
+        "payment_records": room["payment_records"]  # 新增：返回详细的支付记录
     })
 
 if __name__ == '__main__':
